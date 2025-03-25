@@ -1,184 +1,209 @@
-// ✅ 1. HTML 파일: index.html
-// 캔버스 생성과 안내 문구 포함
-/*
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Red Square Movement</title>
-  <style>
-    canvas {
-      display: block;
-      margin: 0 auto;
-      background-color: #eee;
-    }
-    #message {
-      text-align: center;
-      font-weight: bold;
-      margin-top: 10px;
-    }
-  </style>
-</head>
-<body>
-  <canvas id="glcanvas" width="600" height="600"></canvas>
-  <div id="message">Use arrow keys to move the rectangle</div>
-  <script type="module" src="main.js"></script>
-</body>
-</html>
-*/
-
-// ✅ 2. Vertex Shader: vertex.glsl
-/*
-#version 300 es
-in vec2 a_position;
-uniform vec2 u_offset;
-void main() {
-    gl_Position = vec4(a_position + u_offset, 0.0, 1.0);
-}
-*/
-
-// ✅ 3. Fragment Shader: fragment.glsl
-/*
-#version 300 es
-precision mediump float;
-out vec4 fragColor;
-void main() {
-    fragColor = vec4(1.0, 0.0, 0.0, 1.0);
-}
-*/
-
-// ✅ 4. main.js (자바스크립트): 힌트를 반영하여 개선
-const canvas = document.getElementById('glcanvas');
+/*-------------------------------------------------------------------------
+03_HelloTriangleIndexed
+    1) Draws a triangle using indexed vertices.
+    2) Resize viewport while maintaining aspect ratio.
+    3) By the keyboard input 'k', toggle the fill and stroke rendering mode
+    for the triangle
+---------------------------------------------------------------------------*/
+// Get the canvas and WebGL 2 context
+const canvas = document.getElementById('glCanvas');
 const gl = canvas.getContext('webgl2');
 
 if (!gl) {
-  alert('WebGL 2.0 not supported');
+    console.error('WebGL 2 is not supported by your browser.');
 }
 
-canvas.width = 600;
-canvas.height = 600;
+// Set initial canvas size
+const CANVAS_WIDTH = 600;
+const CANVAS_HEIGHT = 600;
+canvas.width = CANVAS_WIDTH;
+canvas.height = CANVAS_HEIGHT;
+
+// Resize viewport while maintaining aspect ratio
+window.addEventListener('resize', () => {
+
+    // Calculate new canvas dimensions while maintaining aspect ratio
+    const aspectRatio = CANVAS_WIDTH / CANVAS_HEIGHT;
+    let newWidth = window.innerWidth;
+    let newHeight = window.innerHeight;
+
+    if (newWidth / newHeight > aspectRatio) {
+        newWidth = newHeight * aspectRatio;
+    } else {
+        newHeight = newWidth / aspectRatio;
+    }
+
+    canvas.width = newWidth;
+    canvas.height = newHeight;
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    render();
+});
+
+// Initialize WebGL settings
+gl.viewport(0, 0, canvas.width, canvas.height);
+
+// Set clear color to black
+gl.clearColor(0.1, 0.2, 0.3, 1.0);
+
+// Vertex shader source code
+const vertexShaderSource = `#version 300 es
+in vec4 aPosition;
+void main() {
+    gl_Position = aPosition;
+}`;
+
+// Fragment shader source code for red color
+const fragmentShaderSourceOrange = `#version 300 es
+precision mediump float;
+out vec4 fragColor;
+void main() {
+    fragColor = vec4(1.0, 0.0, 0.0, 1.0); // Red color
+}`;
+
+// Fragment shader source code for black color
+const fragmentShaderSourceGrey = `#version 300 es
+precision mediump float;
+out vec4 fragColor;
+void main() {
+    fragColor = vec4(0.1, 0.2, 0.3, 1.0); // black color
+}`;
+
+// Function to compile shader
+function compileShader(gl, source, type) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        console.error('Error compiling shader:', gl.getShaderInfoLog(shader));
+        gl.deleteShader(shader);
+        return null;
+    }
+    return shader;
+}
+
+// Function to create shader program
+function createProgram(gl, vertexShaderSource, fragmentShaderSource) {
+    const vertexShader = compileShader(gl, vertexShaderSource, gl.VERTEX_SHADER);
+    const fragmentShader = compileShader(gl, fragmentShaderSource, gl.FRAGMENT_SHADER);
+    const program = gl.createProgram();
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        console.error('Error linking program:', gl.getProgramInfoLog(program));
+        gl.deleteProgram(program);
+        return null;
+    }
+    return program;
+}
+
+// Create shader programs
+const program1 = createProgram(gl, vertexShaderSource, fragmentShaderSourceOrange);
+const program2 = createProgram(gl, vertexShaderSource, fragmentShaderSourceGrey);
+
+// Check if shader programs were created successfully
+if (!program1 || !program2) {
+    console.error('Failed to create shader programs.');
+}
 
 let offset = [0, 0];
-const squareSize = 0.2;
-const moveStep = 0.01;
 
-function resizeAspectRatio() {
-  const aspect = 1;
-  let width = window.innerWidth;
-  let height = window.innerHeight;
+const recsize = 0.2;
+const move = 0.01;
 
-  if (width / height > aspect) {
-    width = height * aspect;
-  } else {
-    height = width / aspect;
-  }
-  canvas.width = width;
-  canvas.height = height;
-  gl.viewport(0, 0, width, height);
-}
+// Rectangle vertices
+const vertices = new Float32Array([
+    -0.1, -0.1, 0.0,  // Bottom left
+     0.1, -0.1, 0.0,  // Bottom right
+     0.1,  0.1, 0.0,  // Top right
+    -0.1,  0.1, 0.0   // Top left
+]);
 
-window.addEventListener('resize', resizeAspectRatio);
+// Indices for FILL mode (triangles)
+const fillIndices = new Uint16Array([
+    0, 1, 2,  // First triangle
+    2, 3, 0   // Second triangle
+]);
 
-async function loadShaderSource(url) {
-  const response = await fetch(url);
-  return response.text();
-}
+// Indices for LINE mode (edges, including common edge)
+const lineIndices = new Uint16Array([
+    0, 1,  // Bottom edge of first triangle
+    1, 2,  // Right edge of first triangle
+    2, 3,  // Top edge of second triangle
+    3, 0,  // Left edge of second triangle
+    0, 2   // Common edge
+]);
 
-function compileShader(gl, type, source) {
-  const shader = gl.createShader(type);
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    console.error(gl.getShaderInfoLog(shader));
-    gl.deleteShader(shader);
-    return null;
-  }
-  return shader;
-}
+// Create Vertex Array Object
+const vao = gl.createVertexArray();
+gl.bindVertexArray(vao);
 
-function createProgram(gl, vsSource, fsSource) {
-  const vs = compileShader(gl, gl.VERTEX_SHADER, vsSource);
-  const fs = compileShader(gl, gl.FRAGMENT_SHADER, fsSource);
-  const program = gl.createProgram();
-  gl.attachShader(program, vs);
-  gl.attachShader(program, fs);
-  gl.linkProgram(program);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    console.error(gl.getProgramInfoLog(program));
-    gl.deleteProgram(program);
-    return null;
-  }
-  return program;
-}
+// Create vertex buffer
+const vertexBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
 
-async function main() {
-  resizeAspectRatio();
-  const vsSource = await loadShaderSource('vertex.glsl');
-  const fsSource = await loadShaderSource('fragment.glsl');
-  const program = createProgram(gl, vsSource, fsSource);
-  gl.useProgram(program);
+// Link vertex data
+gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+gl.enableVertexAttribArray(0);
 
-  const aPositionLoc = gl.getAttribLocation(program, 'a_position');
-  const uOffsetLoc = gl.getUniformLocation(program, 'u_offset');
+// Create element buffer for FILL
+const fillIndexBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, fillIndexBuffer);
+gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, fillIndices, gl.STATIC_DRAW);
 
-  const half = squareSize / 2;
-  const vertices = new Float32Array([
-    0, 0,
-    -half, -half,
-    -half, half,
-    half, half,
-    half, -half
-  ]);
+// Create element buffer for LINE
+const lineIndexBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, lineIndexBuffer);
+gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, lineIndices, gl.STATIC_DRAW);
 
-  const buffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-  gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
-  gl.enableVertexAttribArray(aPositionLoc);
-  gl.vertexAttribPointer(aPositionLoc, 2, gl.FLOAT, false, 0, 0);
+// Set initial rendering mode to FILL
+let isFillMode = true;
 
-  gl.clearColor(1, 1, 1, 1);
-
-  function draw() {
+// Render loop
+function render() {
     gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.uniform2fv(uOffsetLoc, offset);
-    gl.drawArrays(gl.TRIANGLE_FAN, 0, 5);
-  }
 
-  const keys = {
-    ArrowLeft: true,
-    ArrowRight: true,
-    ArrowUp: true,
-    ArrowDown: true
-  };
-
-  window.addEventListener('keydown', (event) => {
-    if (event.key in keys) {
-      const limit = 1.0 - squareSize / 2;
-      switch (event.key) {
-        case 'ArrowLeft':
-          if (offset[0] - moveStep >= -limit) offset[0] -= moveStep;
-          break;
-        case 'ArrowRight':
-          if (offset[0] + moveStep <= limit) offset[0] += moveStep;
-          break;
-        case 'ArrowUp':
-          if (offset[1] + moveStep <= limit) offset[1] += moveStep;
-          break;
-        case 'ArrowDown':
-          if (offset[1] - moveStep >= -limit) offset[1] -= moveStep;
-          break;
-      }
-      draw();
+    if (isFillMode) { 
+        // Fill the two triangles using shader program1 (orange)
+        gl.useProgram(program1);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, fillIndexBuffer);
+        gl.drawElements(gl.TRIANGLES, fillIndices.length, gl.UNSIGNED_SHORT, 0);
+    } else { 
+        // Draw the edges of the two triangles using shader program2 (grey)
+        gl.useProgram(program2); 
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, lineIndexBuffer);
+        gl.drawElements(gl.LINES, lineIndices.length, gl.UNSIGNED_SHORT, 0);
     }
-  });
 
-  window.addEventListener('keyup', (event) => {
-    if (event.key in keys) {
-      // 키를 뗐을 때도 필요한 처리를 여기에 추가할 수 있음 (예: 상태 초기화 등)
-    }
-  });
-
-  draw();
 }
+
+// Event listener for key press
+
+window.addEventListener('keydown', (event) => { 
+    const limit = 1.0 - recsize / 2;
+    if (event.key === 'ArrowLeft' && offset[0] - move >= -limit) { 
+        offset[0] -= move;
+        //
+    }
+    if (event.key === 'ArrowRight' && offset[0] + move <= limit) { 
+        offset[0] += move;
+        //
+    }
+    if (event.key === 'ArrowUp'  && offset[1] + move <= limit) { 
+        offset[1] += move;
+        //
+    }
+    if (event.key === 'ArrowDown' && offset[1] - move >= -limit) { 
+        offset[1] -= move;
+        //
+    }
+    draw();
+}); 
+
+
+
+// Start rendering
+render();
 
 main();
